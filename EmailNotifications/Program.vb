@@ -175,13 +175,14 @@ Module Program
                         "     , [Created Date], [Status], [Requested By] " &
                         "FROM D_Licence_With_Term  " &
                         "WHERE [Expired Date] <= DATEADD (dd, -1, DATEADD(mm, DATEDIFF(mm, 0, GETDATE()) + 10, 0))  " &
-                        "  And [Application Type] IN ('PC Scale (AI)')  " &
+                        "  AND [Application Type] IN ('PC Scale (AI)')  " &
                         "  AND [Status] NOT IN ('Renew', 'Blocked', 'Expired')  " &
                         "  AND Replace([Licence Code], '-', '') NOT IN (SELECT Replace(Value_1, '-', '') FROM DB_Lookup WHERE Lookup_Name = 'Production Used Licence Key') " &
                         "  AND [Requestor ID] = '" & filter & "' " &
                         "ORDER BY [Expired Date], [Serial No] "
 
             Case "AI Licence (Renewed)"
+                ' For license with Renew status, list them all regardless when its expiry date
                 query = "SELECT [Licensee], ISNULL([Application Type] + ' (' + Activated_Module_Type + ') ', [Application Type]) AS [Application Type] " &
                         "     , [Serial No], [AI Device ID], [AI Device Serial No], [Activated Date], [Expired Date], [Licence Code] AS [Binding Key], [MAC Address] " &
                         "     , CASE WHEN CAST([Licence Term] AS int) > 1000 THEN 'No Expiry' ELSE CAST([Licence Term] as nvarchar) END AS [Licence Term] " &
@@ -198,7 +199,7 @@ Module Program
                         "     , [Created Date], [Status], [Requested By] " &
                         "FROM D_Licence_With_Term " &
                         "WHERE [Expired Date] <= DATEADD (dd, -1, DATEADD(mm, DATEDIFF(mm, 0, GETDATE()) + 10, 0)) " &
-                        "  And [Application Type] IN ('PC Scale (AI)') AND [Status] IN ('Expired') " &
+                        "  AND [Application Type] IN ('PC Scale (AI)') AND [Status] IN ('Expired') " &
                         "  AND Replace([Licence Code], '-', '') NOT IN (SELECT Replace(Value_1, '-', '') FROM DB_Lookup WHERE Lookup_Name = 'Production Used Licence Key') " &
                         "  AND [Requestor ID] = '" & filter & "' " &
                         "ORDER BY [Expired Date], [Serial No] "
@@ -246,7 +247,7 @@ Module Program
             Case "AI Licence (Expiring)"
                 heading = "<h3 class='reportTitle'>AI Licence (Expiring)</h3><div class='alert'><div class='noteText'>Note: Following is/are expiring AI license(s), please attach SAS order for renewal.</div></div>"
             Case "AI Licence (Renewed)"
-                heading = "<h3 class='reportTitle'>AI Licence (Renewed)</h3><div class='alert'><div class='noteText'>Note: Following licenses is/are in 'Renew' status, please advise user to perform re-authentication to renew the license.</div></div>"
+                heading = "<h3 class='reportTitle'>AI Licence (Renewed)</h3><div class='alert'><div class='noteText'>Note: Following license(s) is/are in 'Renew' status, please advise user to perform re-authentication to renew the license.</div></div>"
             Case "AI Licence (Expired)"
                 heading = "<h3 class='reportTitle'>AI Licence (Expired)</h3><div class='alert'><div class='noteText'>Note: Following is/are expired AI license(s). Please advise if user wish to renew the license.</div></div>"
             Case "Termed Licence (Expiring)"
