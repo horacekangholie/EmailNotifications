@@ -17,6 +17,7 @@ Module Program
         GenerateMonthlyEmail("DMC Account Reminder")
         GenerateMonthlyEmail("AI Licence Reminder")
         GenerateMonthlyEmail("Termed Licence Reminder")
+        GenerateMonthlyEmail("AI Licence Billing Notifications")
     End Sub
 
     Sub GenerateMonthlyEmail(ByVal emailType As String)
@@ -149,6 +150,10 @@ Module Program
                 query = "SELECT [Recipient ID], [Recipient Name], [Recipient Email], [Cc_Email], [Bcc_Email] " &
                         "FROM _Termed_Licence_Notifications_Email_List "
 
+            Case "AI Licence Billing Notifications"
+                query = "SELECT [Recipient ID], [Recipient Name], [Recipient Email], [Cc_Email], [Bcc_Email] " &
+                        "FROM _AI_Licence_Billing_Notifications_Email_List "
+
             Case "DMC Billed Account Expiry"
                 query = "SELECT [Bill Entity], [Group], [HQ Code], [HQ Name], [Store Code], [Store Name], [Created Date] " &
                         "     , [Start Date], [End Date], [Duration], [Currency], [Fee], [Status], [Account Type], [Sales Representative] " &
@@ -175,7 +180,7 @@ Module Program
                         "     , [Created Date], [Status], [Requested By] " &
                         "FROM D_Licence_With_Term  " &
                         "WHERE [Expired Date] <= DATEADD (dd, -1, DATEADD(mm, DATEDIFF(mm, 0, GETDATE()) + 10, 0))  " &
-                        "  AND [Application Type] IN ('PC Scale (AI)')  " &
+                        "  AND [Application Type] IN ('PC Scale (AI Classic)', 'PC Scale - AI (Online)', 'PC Scale - AI (Offline)')  " &
                         "  AND [Status] NOT IN ('Renew', 'Blocked', 'Expired')  " &
                         "  AND Replace([Licence Code], '-', '') NOT IN (SELECT Replace(Value_1, '-', '') FROM DB_Lookup WHERE Lookup_Name = 'Production Used Licence Key') " &
                         "  AND [Requestor ID] = '" & filter & "' " &
@@ -199,7 +204,7 @@ Module Program
                         "     , [Created Date], [Status], [Requested By] " &
                         "FROM D_Licence_With_Term " &
                         "WHERE [Expired Date] <= DATEADD (dd, -1, DATEADD(mm, DATEDIFF(mm, 0, GETDATE()) + 10, 0)) " &
-                        "  AND [Application Type] IN ('PC Scale (AI)') AND [Status] IN ('Expired') " &
+                        "  AND [Application Type] IN ('PC Scale (AI Classic)', 'PC Scale - AI (Online)', 'PC Scale - AI (Offline)') AND [Status] IN ('Expired') " &
                         "  AND Replace([Licence Code], '-', '') NOT IN (SELECT Replace(Value_1, '-', '') FROM DB_Lookup WHERE Lookup_Name = 'Production Used Licence Key') " &
                         "  AND [Requestor ID] = '" & filter & "' " &
                         "ORDER BY [Expired Date], [Serial No] "
@@ -215,7 +220,32 @@ Module Program
                         "FROM D_Licence_With_Term " &
                         "WHERE [Expired Date] BETWEEN DATEADD(mm, DATEDIFF(mm, 0, GETDATE()) - 12, 0) AND DATEADD (dd, -1, DATEADD(mm, DATEDIFF(mm, 0, GETDATE()) + 3, 0)) " &
                         "  AND [Application Type] NOT IN ('PC Scale (AI)') AND Chargeable NOT IN ('No') " &
-                        "ORDER BY [Expired Date] DESC"
+                        "ORDER BY [Expired Date] DESC "
+
+            Case "AI Licence Billing List"
+                query = "SELECT [Distributor], [Customer], [Store] " &
+                        "     , [Licence Key], [MAC Address] " &
+                        "     , [Is Trial], [CZL Account], [Account Model] AS [Model] " &
+                        "     , [Scale SN], [AI Activation Key], [Device Serial], [Device ID] " &
+                        "     , [Mode], [Term In Month] AS [Term] " &
+                        "     , [Created Date], [Registered Date] " &
+                        "     , CASE WHEN [Mode] = 'Online'  " &
+                        "            THEN CASE WHEN [Renewed Date] > [Registered Date]  " &
+                        "                      THEN [Renewed Date] " &
+                        "                      ELSE [Registered Date] END " &
+                        "            ELSE CASE WHEN [Registered Date] < DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date]) " &
+                        "            THEN DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])  " &
+                        "            ELSE [Registered Date] END  " &
+                        "            END AS [Registered / Renew Date]  " &
+                        "     , Case When [Mode] = 'Online' " &
+                        "            THEN CASE WHEN DATEDIFF(YEAR, [Registered Date], [Renewed Date]) > 0  " &
+                        "                      THEN DATEDIFF(YEAR, [Registered Date], [Renewed Date]) + 2 " &
+                        "                      ELSE 1 END " &
+                        "            ELSE DATEDIFF(YEAR, [Registered Date], DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])) + 1  " &
+                        "            END AS [Bill Cycle] " &
+                        "     , [Sales Rep] " &
+                        "FROM R_DMC_CZL_Biling_Report " &
+                        "ORDER BY [Mode], [Distributor], [Customer], [Store], [Scale SN] "
 
         End Select
 
@@ -231,6 +261,8 @@ Module Program
                 subject = String.Format("Upcoming AI Licence expiry [{0} - {1}]", DateTime.Today.ToString("MMM yyyy"), DateTime.Today.AddMonths(2).ToString("MMM yyyy"))
             Case "Termed Licence Reminder"
                 subject = String.Format("Upcoming Termed Licence expiry [{0} - {1}]", DateTime.Today.ToString("MMM yyyy"), DateTime.Today.AddMonths(2).ToString("MMM yyyy"))
+            Case "AI Licence Billing Notifications"
+                subject = String.Format("Activated AI Licence [{0}]", DateTime.Today.AddMonths(-1).ToString("MMM yyyy"))
         End Select
         Return subject
     End Function
@@ -267,6 +299,9 @@ Module Program
 
             Case "Termed Licence Reminder"
                 contentTypes = {"Termed Licence (Expiring)"}
+
+            Case "AI Licence Billing Notifications"
+                contentTypes = {"AI Licence Billing List"}
 
         End Select
         Return contentTypes
@@ -311,6 +346,10 @@ Module Program
 
             Case "Termed Licence Reminder"
                 bodyBuilder.AppendLine("<div>Please observe the status of the following Termed Licences.</div>")
+
+            Case "AI Licence Billing Notifications"
+                bodyBuilder.AppendLine("<div style='margin-bottom:40px'>Following is the list of activated AI Licence.</div>")
+
         End Select
 
 
@@ -390,7 +429,8 @@ Module Program
 
                             bodyBuilder.AppendLine("</tbody>")
                         Else
-                            Return Nothing
+                            'Return Nothing
+                            bodyBuilder.AppendLine("<p>There is no record this month</p>")
                         End If
                     End Using
                 End Using
