@@ -223,12 +223,15 @@ Module Program
                         "ORDER BY [Expired Date] DESC "
 
             Case "AI Licence Billing List"
-                query = "SELECT [Distributor], [Customer], [Store] " &
+                query = "SELECT [Code], [Distributor], [Customer], [Store] " &
                         "     , [Licence Key], [MAC Address] " &
                         "     , [Is Trial], [CZL Account], [Account Model] AS [Model] " &
                         "     , [Scale SN], [AI Activation Key], [Device Serial], [Device ID] " &
                         "     , [Mode], [Term In Month] AS [Term] " &
                         "     , [Created Date], [Registered Date] " &
+                        "     , L.PO_No AS [PO No] " &
+                        "     , IPS.[SO No] " &
+                        "     , IPS.[Invoice No] " &
                         "     , CASE WHEN [Mode] = 'Online'  " &
                         "            THEN CASE WHEN [Renewed Date] > [Registered Date]  " &
                         "                      THEN [Renewed Date] " &
@@ -244,7 +247,9 @@ Module Program
                         "            ELSE DATEDIFF(YEAR, [Registered Date], DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])) + 1  " &
                         "            END AS [Bill Cycle] " &
                         "     , [Sales Rep] " &
-                        "FROM R_DMC_CZL_Biling_Report " &
+                        "FROM R_DMC_CZL_Biling_Report R " &
+                        "INNER JOIN LMS_Licence L ON L.Licence_Code = R.[Licence Key] " &
+                        "INNER JOIN _Customer_Invoice_PO_SO IPS ON IPS.[Customer ID] = L.Customer_ID AND IPS.[PO No] = L.PO_No " &
                         "ORDER BY [Mode], [Distributor], [Customer], [Store], [Scale SN] "
 
         End Select

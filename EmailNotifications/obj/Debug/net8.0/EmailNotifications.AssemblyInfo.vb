@@ -16,7 +16,7 @@ Imports System.Reflection
 <Assembly: System.Reflection.AssemblyCompanyAttribute("EmailNotifications"),  _
  Assembly: System.Reflection.AssemblyConfigurationAttribute("Debug"),  _
  Assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0"),  _
- Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0f2ee5ba5e673cd17d83dc5b46bd41cf376e921d"),  _
+ Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0547859eb6d62fe255fd150a6765288e46dd0ede"),  _
  Assembly: System.Reflection.AssemblyProductAttribute("EmailNotifications"),  _
  Assembly: System.Reflection.AssemblyTitleAttribute("EmailNotifications"),  _
  Assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")> 
