@@ -17,7 +17,7 @@ Module Program
         GenerateMonthlyEmail("DMC Account Reminder")
         GenerateMonthlyEmail("AI Licence Reminder")
         GenerateMonthlyEmail("Termed Licence Reminder")
-        GenerateMonthlyEmail("AI Licence Billing Notifications")
+        'GenerateMonthlyEmail("AI Licence Billing Notifications")
     End Sub
 
     Sub GenerateMonthlyEmail(ByVal emailType As String)
