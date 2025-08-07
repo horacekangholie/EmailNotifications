@@ -6,6 +6,9 @@ Imports System.Runtime
 Imports System.Security.Cryptography.X509Certificates
 Imports System.Text
 Imports System.Runtime.CompilerServices
+Imports ClosedXML.Excel
+Imports System.IO
+
 
 Module Program
     ' Database Connection string
@@ -17,20 +20,18 @@ Module Program
         GenerateMonthlyEmail("DMC Account Reminder")
         GenerateMonthlyEmail("AI Licence Reminder")
         GenerateMonthlyEmail("Termed Licence Reminder")
-        'GenerateMonthlyEmail("AI Licence Billing Notifications")
+        GenerateMonthlyEmail("AI Licence Billing Notifications")
     End Sub
 
     Sub GenerateMonthlyEmail(ByVal emailType As String)
-        Dim query As String = GetSQL(emailType, Nothing)  ' Retrieve a list of recipients
+        Dim query As String = GetSQL(emailType, Nothing)
 
-        ' Generate email for each of recipient from retrieved list
         Using conn As New SqlConnection(connectionString)
             conn.Open()
             Using cmd As New SqlCommand(query, conn)
                 Using reader As SqlDataReader = cmd.ExecuteReader()
                     If reader.HasRows Then
                         While reader.Read()
-                            ' Email attributes
                             Dim contentTypes As String() = GetContentTypes(emailType)
                             Dim recipientID As String = reader("Recipient ID").ToString()
                             Dim recipientName As String = reader("Recipient Name").ToString()
@@ -39,12 +40,16 @@ Module Program
                             Dim bccEmail As String = reader("Bcc_Email").ToString()
                             Dim subject As String = GetEmailSubject(emailType)
 
-                            ' Generate the body content by calling CreateEmailBody function
                             Dim body As String = CreateEmailBody(recipientName, contentTypes, recipientID, emailType)
+                            Dim attachmentPath As String = GenerateExcelFile(recipientID, contentTypes)
 
-                            ' Execute sending email if body is successfully generated
                             If Not String.IsNullOrEmpty(body) Then
-                                SendEmail(recipientEmail, subject, body, ccEmail, bccEmail)
+                                SendEmail(recipientEmail, subject, body, ccEmail, bccEmail, attachmentPath)
+
+                                ' Safe to Dispose()
+                                If File.Exists(attachmentPath) Then
+                                    File.Delete(attachmentPath)
+                                End If
                             End If
                         End While
                     End If
@@ -53,51 +58,54 @@ Module Program
         End Using
     End Sub
 
-    Sub SendEmail(ByVal recipient As String, ByVal subject As String, ByVal body As String, Optional ByVal cc As String = Nothing, Optional ByVal bcc As String = Nothing)
-        Try
-            ' Fetch SMTP configuration from the database
-            Dim smtpConfig As DataRow = GetSmtpConfigFromDb()
+    Sub SendEmail(ByVal recipient As String, ByVal subject As String, ByVal body As String,
+              Optional ByVal cc As String = Nothing, Optional ByVal bcc As String = Nothing,
+              Optional ByVal attachmentPath As String = Nothing)
 
+        Dim mail As New MailMessage()
+        Dim smtp As SmtpClient = Nothing
+        Dim attachment As Attachment = Nothing
+
+        Try
+            Dim smtpConfig As DataRow = GetSmtpConfigFromDb()
             If smtpConfig Is Nothing Then
                 Console.WriteLine("Failed to fetch SMTP configuration from the database.")
                 Return
             End If
 
-            Dim mail As New MailMessage()
-            mail.From = New MailAddress(smtpConfig("Username").ToString(), "DMC Administrator")   ' Set sender email
-
-            ' Set recipients email
+            mail.From = New MailAddress(smtpConfig("Username").ToString(), "DMC Administrator")
             mail.To.Add(recipient)
+            If Not String.IsNullOrWhiteSpace(cc) Then mail.CC.Add(cc)
+            If Not String.IsNullOrWhiteSpace(bcc) Then mail.Bcc.Add(bcc)
 
-            ' Add CC if provided and not empty
-            If Not String.IsNullOrWhiteSpace(cc) Then
-                mail.CC.Add(cc)
-            End If
-
-            ' Add BCC if provided and not empty
-            If Not String.IsNullOrWhiteSpace(bcc) Then
-                mail.Bcc.Add(bcc)
-            End If
-
-            ' Set email subject and body
             mail.Subject = subject
             mail.Body = body
-            mail.IsBodyHtml = True ' Set to False if not sending HTML email
+            mail.IsBodyHtml = True
 
-            ' Set SMTP client using the details from the database
-            Dim smtp As New SmtpClient(smtpConfig("Host").ToString())
+            ' Attach file if available
+            If Not String.IsNullOrEmpty(attachmentPath) AndAlso File.Exists(attachmentPath) Then
+                attachment = New Attachment(attachmentPath)
+                mail.Attachments.Add(attachment)
+            End If
+
+            smtp = New SmtpClient(smtpConfig("Host").ToString())
             smtp.Credentials = New System.Net.NetworkCredential(smtpConfig("Username").ToString(), smtpConfig("Password").ToString())
             smtp.Port = Convert.ToInt32(smtpConfig("Port"))
             smtp.EnableSsl = Convert.ToBoolean(smtpConfig("SSL_Enabled"))
 
-            ' Send email
             smtp.Send(mail)
-
             Console.WriteLine("Email sent successfully.")
         Catch ex As Exception
             Console.WriteLine("Error sending email: " & ex.Message)
+        Finally
+            ' Ensure cleanup
+            If attachment IsNot Nothing Then attachment.Dispose()
+            If mail IsNot Nothing Then mail.Dispose()
+            If smtp IsNot Nothing Then smtp.Dispose()
         End Try
     End Sub
+
+
 
 
 
@@ -222,35 +230,59 @@ Module Program
                         "  AND [Application Type] NOT IN ('PC Scale (AI)') AND Chargeable NOT IN ('No') " &
                         "ORDER BY [Expired Date] DESC "
 
-            Case "AI Licence Billing List"
-                query = "SELECT [Code], [Distributor], [Customer], [Store] " &
-                        "     , [Licence Key], [MAC Address] " &
-                        "     , [Is Trial], [CZL Account], [Account Model] AS [Model] " &
-                        "     , [Scale SN], [AI Activation Key], [Device Serial], [Device ID] " &
-                        "     , [Mode], [Term In Month] AS [Term] " &
-                        "     , [Created Date], [Registered Date] " &
-                        "     , L.PO_No AS [PO No] " &
-                        "     , IPS.[SO No] " &
-                        "     , IPS.[Invoice No] " &
-                        "     , CASE WHEN [Mode] = 'Online'  " &
-                        "            THEN CASE WHEN [Renewed Date] > [Registered Date]  " &
-                        "                      THEN [Renewed Date] " &
-                        "                      ELSE [Registered Date] END " &
-                        "            ELSE CASE WHEN [Registered Date] < DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date]) " &
-                        "            THEN DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])  " &
-                        "            ELSE [Registered Date] END  " &
-                        "            END AS [Registered / Renew Date]  " &
-                        "     , Case When [Mode] = 'Online' " &
-                        "            THEN CASE WHEN DATEDIFF(YEAR, [Registered Date], [Renewed Date]) > 0  " &
-                        "                      THEN DATEDIFF(YEAR, [Registered Date], [Renewed Date]) + 2 " &
-                        "                      ELSE 1 END " &
-                        "            ELSE DATEDIFF(YEAR, [Registered Date], DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])) + 1  " &
-                        "            END AS [Bill Cycle] " &
-                        "     , [Sales Rep] " &
-                        "FROM R_DMC_CZL_Biling_Report R " &
-                        "INNER JOIN LMS_Licence L ON L.Licence_Code = R.[Licence Key] " &
-                        "INNER JOIN _Customer_Invoice_PO_SO IPS ON IPS.[Customer ID] = L.Customer_ID AND IPS.[PO No] = L.PO_No " &
-                        "ORDER BY [Mode], [Distributor], [Customer], [Store], [Scale SN] "
+            Case "AI Billing List"
+                'query = "SELECT [Code], [Distributor], [Customer], [Store] " &
+                '        "     , [Licence Key], [MAC Address] " &
+                '        "     , [Is Trial], [CZL Account], [Account Model] AS [Model] " &
+                '        "     , [Scale SN], [AI Activation Key], [Device Serial], [Device ID] " &
+                '        "     , [Mode], [Term In Month] AS [Term] " &
+                '        "     , [Created Date], [Registered Date] " &
+                '        "     , L.PO_No AS [PO No] " &
+                '        "     , IPS.[SO No] " &
+                '        "     , IPS.[Invoice No] " &
+                '        "     , CASE WHEN [Mode] = 'Online'  " &
+                '        "            THEN CASE WHEN [Renewed Date] > [Registered Date]  " &
+                '        "                      THEN [Renewed Date] " &
+                '        "                      ELSE [Registered Date] END " &
+                '        "            ELSE CASE WHEN [Registered Date] < DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date]) " &
+                '        "            THEN DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])  " &
+                '        "            ELSE [Registered Date] END  " &
+                '        "            END AS [Registered / Renew Date]  " &
+                '        "     , Case When [Mode] = 'Online' " &
+                '        "            THEN CASE WHEN DATEDIFF(YEAR, [Registered Date], [Renewed Date]) > 0  " &
+                '        "                      THEN DATEDIFF(YEAR, [Registered Date], [Renewed Date]) + 2 " &
+                '        "                      ELSE 1 END " &
+                '        "            ELSE DATEDIFF(YEAR, [Registered Date], DATEADD(YEAR, DATEDIFF(YEAR, [Registered Date], DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)), [Registered Date])) + 1  " &
+                '        "            END AS [Bill Cycle] " &
+                '        "     , [Sales Rep] " &
+                '        "FROM R_DMC_CZL_Biling_Report R " &
+                '        "INNER JOIN LMS_Licence L ON L.Licence_Code = R.[Licence Key] " &
+                '        "INNER JOIN _Customer_Invoice_PO_SO IPS ON IPS.[Customer ID] = L.Customer_ID AND IPS.[PO No] = L.PO_No " &
+                '        "ORDER BY [Mode], [Distributor], [Customer], [Store], [Scale SN] "
+                query = "SELECT [Code], [Distributor], [Customer], [Store]
+                              , [Licence Key], [MAC Address], [CZL Account], [Model]
+                              , [Scale SN], [AI Activation Key], [Device Serial], [Device ID]
+                              , [Model], [Term]
+                              , CONVERT(varchar(10), [Created Date], 23) AS [Created Date]
+                              , CONVERT(varchar(10), [Registered Date], 23) AS [Registered Date]
+                              , [SO No], [Invoice No]
+                              , CONVERT(varchar(10), [Registered / Renew Date], 23) AS [Registered / Renew Date]
+                              , [Bill Cycle], [Sales Rep]  
+                         FROM DMC_CZL_AI_Biling_Report(GETDATE())
+                         ORDER BY [Mode], [Distributor], [Customer], [Store], [Scale SN] "
+
+            Case "AI Billing List (Prev)"
+                query = "SELECT [Code], [Distributor], [Customer], [Store]
+                              , [Licence Key], [MAC Address], [CZL Account], [Model]
+                              , [Scale SN], [AI Activation Key], [Device Serial], [Device ID]
+                              , [Model], [Term]
+                              , CONVERT(varchar(10), [Created Date], 23) AS [Created Date]
+                              , CONVERT(varchar(10), [Registered Date], 23) AS [Registered Date]
+                              , [SO No], [Invoice No]
+                              , CONVERT(varchar(10), [Registered / Renew Date], 23) AS [Registered / Renew Date]
+                              , [Bill Cycle], [Sales Rep]  
+                         FROM DMC_CZL_AI_Biling_Report(DATEADD(Month, -1, GETDATE()))
+                         ORDER BY [Mode], [Distributor], [Customer], [Store], [Scale SN] "
 
         End Select
 
@@ -267,31 +299,31 @@ Module Program
             Case "Termed Licence Reminder"
                 subject = String.Format("Upcoming Termed Licence expiry [{0} - {1}]", DateTime.Today.ToString("MMM yyyy"), DateTime.Today.AddMonths(2).ToString("MMM yyyy"))
             Case "AI Licence Billing Notifications"
-                subject = String.Format("Activated AI Licence [{0}]", DateTime.Today.AddMonths(-1).ToString("MMM yyyy"))
+                subject = String.Format("Activated AI Licence in {0}", DateTime.Today.AddMonths(-1).ToString("MMM yyyy"))
         End Select
         Return subject
     End Function
 
-    Private Function GetContentHeading(ByVal headerName As String) As String
-        Dim heading As String = Nothing
-        Select Case headerName
-            Case "DMC Billed Account Expiry"
-                heading = String.Format("<h3 Class='reportTitle'>DMC Billed Account expired as of {0}</h3>", New DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(3).AddDays(-1).ToString("dd MMM yyyy"))
-            Case "DMC Trial Account Expiry"
-                heading = String.Format("<h3 class='reportTitle'>DMC Trial Account expired as of {0}</h3>", New DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(3).AddDays(-1).ToString("dd MMM yyyy"))
-            Case "DMC Suspended Store"
-                heading = String.Format("<h3 class='reportTitle'>Suspended stores on {0}</h3>", New DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).ToString("dd MMM yyyy"))
-            Case "AI Licence (Expiring)"
-                heading = "<h3 class='reportTitle'>AI Licence (Expiring)</h3><div class='alert'><div class='noteText'>Note: Following is/are expiring AI license(s), please attach SAS order for renewal.</div></div>"
-            Case "AI Licence (Renewed)"
-                heading = "<h3 class='reportTitle'>AI Licence (Renewed)</h3><div class='alert'><div class='noteText'>Note: Following license(s) is/are in 'Renew' status, please advise user to perform re-authentication to renew the license.</div></div>"
-            Case "AI Licence (Expired)"
-                heading = "<h3 class='reportTitle'>AI Licence (Expired)</h3><div class='alert'><div class='noteText'>Note: Following is/are expired AI license(s). Please advise if user wish to renew the license.</div></div>"
-            Case "Termed Licence (Expiring)"
-                heading = "<h3 class='reportTitle'>Termed Licence (Expiring)</h3><div class='alert'><div class='noteText'>Note: Following is/are expiring Termed license(s), please send SAS order for renewal.</div></div>"
-        End Select
-        Return heading
-    End Function
+    'Private Function GetContentHeading(ByVal headerName As String) As String
+    '    Dim heading As String = Nothing
+    '    Select Case headerName
+    '        Case "DMC Billed Account Expiry"
+    '            heading = String.Format("<h3 Class='reportTitle'>DMC Billed Account expired as of {0}</h3>", New DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(3).AddDays(-1).ToString("dd MMM yyyy"))
+    '        Case "DMC Trial Account Expiry"
+    '            heading = String.Format("<h3 class='reportTitle'>DMC Trial Account expired as of {0}</h3>", New DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(3).AddDays(-1).ToString("dd MMM yyyy"))
+    '        Case "DMC Suspended Store"
+    '            heading = String.Format("<h3 class='reportTitle'>Suspended stores on {0}</h3>", New DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).ToString("dd MMM yyyy"))
+    '        Case "AI Licence (Expiring)"
+    '            heading = "<h3 class='reportTitle'>AI Licence (Expiring)</h3><div class='alert'><div class='noteText'>Note: Following is/are expiring AI license(s), please attach SAS order for renewal.</div></div>"
+    '        Case "AI Licence (Renewed)"
+    '            heading = "<h3 class='reportTitle'>AI Licence (Renewed)</h3><div class='alert'><div class='noteText'>Note: Following license(s) is/are in 'Renew' status, please advise user to perform re-authentication to renew the license.</div></div>"
+    '        Case "AI Licence (Expired)"
+    '            heading = "<h3 class='reportTitle'>AI Licence (Expired)</h3><div class='alert'><div class='noteText'>Note: Following is/are expired AI license(s). Please advise if user wish to renew the license.</div></div>"
+    '        Case "Termed Licence (Expiring)"
+    '            heading = "<h3 class='reportTitle'>Termed Licence (Expiring)</h3><div class='alert'><div class='noteText'>Note: Following is/are expiring Termed license(s), please send SAS order for renewal.</div></div>"
+    '    End Select
+    '    Return heading
+    'End Function
 
     Private Function GetContentTypes(ByVal emailType As String) As String()
         Dim contentTypes As String() = Nothing
@@ -306,7 +338,7 @@ Module Program
                 contentTypes = {"Termed Licence (Expiring)"}
 
             Case "AI Licence Billing Notifications"
-                contentTypes = {"AI Licence Billing List"}
+                contentTypes = {"AI Billing List", "AI Billing List (Prev)"}
 
         End Select
         Return contentTypes
@@ -343,32 +375,34 @@ Module Program
         bodyBuilder.AppendLine($"<div class='emailGreeting'>Dear {recipientName},</div>")
         Select Case emailType
             Case "DMC Account Reminder"
-                bodyBuilder.AppendLine("<div class='emailGreeting'>It’s the beginning of the month, kindly observe the account expiry date.<br>")
+                bodyBuilder.AppendLine("<div class='emailGreeting'>It’s the beginning of the month, kindly review the file attached for expiring DMC account.<br>")
                 bodyBuilder.AppendLine("Please arrange early for subscription renewal/extension before the account expired.</div>")
 
             Case "AI Licence Reminder"
-                bodyBuilder.AppendLine("<div>Please observe the status of the following AI Licences.</div>")
+                bodyBuilder.AppendLine("<div>Please refer to attached file for AI Licences.</div>")
 
             Case "Termed Licence Reminder"
-                bodyBuilder.AppendLine("<div>Please observe the status of the following Termed Licences.</div>")
+                bodyBuilder.AppendLine("<div>Please refer to attached file for Termed Licences.</div>")
 
             Case "AI Licence Billing Notifications"
-                bodyBuilder.AppendLine("<div style='margin-bottom:40px'>Following is the list of activated AI Licence.</div>")
+                bodyBuilder.AppendLine("<div style='margin-bottom:40px'>Please refer to attached file for activated AI Licence.</div>")
 
         End Select
 
 
         ' Loop through notification types to build the email body
-        bodyBuilder.AppendLine("<div>")
-        For Each headerName As String In contentTypes
-            Dim partialBody As String = contentStringBuilder(headerName, recipientID)
-            If partialBody IsNot Nothing Then
-                Dim contentTitle As String = GetContentHeading(headerName)
-                bodyBuilder.AppendLine(contentTitle)
-                bodyBuilder.AppendLine(partialBody)
-            End If
-        Next
-        bodyBuilder.AppendLine("</div>")
+        'bodyBuilder.AppendLine("<div>")
+        'For Each headerName As String In contentTypes
+        '    Dim result = contentStringBuilderWithTable(headerName, recipientID)
+        '    Dim partialBody As String = result.Item1
+
+        '    If partialBody IsNot Nothing Then
+        '        Dim contentTitle As String = GetContentHeading(headerName)
+        '        bodyBuilder.AppendLine(contentTitle)
+        '        bodyBuilder.AppendLine(partialBody)
+        '    End If
+        'Next
+        'bodyBuilder.AppendLine("</div>")
 
         ' Email Signature
         bodyBuilder.AppendLine("<div class='signature-text-style'>")
@@ -389,52 +423,46 @@ Module Program
         Return bodyBuilder.ToString()
     End Function
 
-    Private Function contentStringBuilder(ByVal notificationType As String, ByVal recipientID As String) As String
+    Private Function contentStringBuilderWithTable(ByVal notificationType As String, ByVal recipientID As String) As (String, DataTable)
         Dim emailBody As String = Nothing
+        Dim dt As New DataTable()
 
         Try
             Dim bodyBuilder As New System.Text.StringBuilder()
-            ' Dynamic body content
             bodyBuilder.AppendLine("<table class='primary-table'>")
             bodyBuilder.AppendLine("<thead>")
 
-            ' Retrieve column headers and data dynamically from the database
             Dim query As String = GetSQL(notificationType, recipientID)
 
             Using conn As New SqlConnection(connectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(query, conn)
                     Using reader As SqlDataReader = cmd.ExecuteReader()
-                        ' Retrieve headers
                         If reader.HasRows Then
-                            If reader.Read() Then
-                                bodyBuilder.AppendLine("<tr>")
-                                For i As Integer = 0 To reader.FieldCount - 1
-                                    bodyBuilder.AppendLine($"<th>{reader.GetName(i)}</th>")
-                                Next
-                                bodyBuilder.AppendLine("</tr>")
-                            End If
+                            dt.Load(reader)
 
-                            bodyBuilder.AppendLine("</thead>")
-                            bodyBuilder.AppendLine("<tbody>")
+                            bodyBuilder.AppendLine("<tr>")
+                            For Each col As DataColumn In dt.Columns
+                                bodyBuilder.AppendLine($"<th>{col.ColumnName}</th>")
+                            Next
+                            bodyBuilder.AppendLine("</tr>")
+                            bodyBuilder.AppendLine("</thead><tbody>")
 
-                            ' Retrieve data rows
-                            Do
+                            For Each row As DataRow In dt.Rows
                                 bodyBuilder.AppendLine("<tr>")
-                                For i As Integer = 0 To reader.FieldCount - 1
-                                    Dim columnName As String = reader.GetName(i)
-                                    If columnName.Contains("Date") Then
-                                        bodyBuilder.AppendLine($"<td class='nowrap'>{Convert.ToDateTime(reader(i)).ToString("dd MMM yyyy")}</td>")
+                                For Each col As DataColumn In dt.Columns
+                                    Dim value = row(col.ColumnName)
+                                    If col.ColumnName.Contains("Date") AndAlso value IsNot DBNull.Value Then
+                                        bodyBuilder.AppendLine($"<td class='nowrap'>{Convert.ToDateTime(value).ToString("dd MMM yyyy")}</td>")
                                     Else
-                                        bodyBuilder.AppendLine($"<td>{reader(i)}</td>")
+                                        bodyBuilder.AppendLine($"<td>{value}</td>")
                                     End If
                                 Next
                                 bodyBuilder.AppendLine("</tr>")
-                            Loop While reader.Read()
+                            Next
 
                             bodyBuilder.AppendLine("</tbody>")
                         Else
-                            'Return Nothing
                             bodyBuilder.AppendLine("<p>There is no record this month</p>")
                         End If
                     End Using
@@ -442,14 +470,40 @@ Module Program
             End Using
 
             bodyBuilder.AppendLine("</table>")
-
             emailBody = bodyBuilder.ToString()
         Catch ex As Exception
-            ' Handle any potential exceptions here (e.g., log the error)
             emailBody = Nothing
         End Try
 
-        Return emailBody
+        Return (emailBody, dt)
+    End Function
+
+
+    Private Function GenerateExcelFile(ByVal recipientID As String, ByVal contentTypes As String()) As String
+        Dim filePath As String = Path.Combine(Path.GetTempPath(), $"Report_{contentTypes(0)}_{DateTime.Now:yyyyMMddHHmmss}.xlsx")
+        Dim sheetAdded As Boolean = False
+
+        Using workbook As New XLWorkbook()
+            For Each headerName As String In contentTypes
+                Dim result = contentStringBuilderWithTable(headerName, recipientID)
+                Dim html As String = result.Item1
+                Dim dt As DataTable = result.Item2
+
+                If dt IsNot Nothing AndAlso dt.Rows.Count > 0 Then
+                    Dim sheetName = headerName.Replace(" ", "_").Substring(0, Math.Min(31, headerName.Length))
+                    workbook.Worksheets.Add(dt, sheetName)
+                    sheetAdded = True
+                End If
+            Next
+
+            ' Save only if at least one sheet is added
+            If sheetAdded Then
+                workbook.SaveAs(filePath)
+                Return filePath
+            Else
+                Return Nothing ' Skip file creation if no record
+            End If
+        End Using
     End Function
 
 End Module

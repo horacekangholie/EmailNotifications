@@ -21,3 +21,11 @@ C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailN
 C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\obj\Debug\net8.0\EmailNotifications.vbproj.AssemblyReference.cache
 C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\obj\Debug\net8.0\EmailNot.8412D7AB.Up2Date
 C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\obj\Debug\net8.0\EmailNotifications.sourcelink.json
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\ClosedXML.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\ClosedXML.Parser.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\DocumentFormat.OpenXml.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\DocumentFormat.OpenXml.Framework.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\ExcelNumberFormat.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\RBush.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\SixLabors.Fonts.dll
+C:\Users\1206238\Documents\Visual Studio 2022\Projects\EmailNotifications\EmailNotifications\bin\Debug\net8.0\System.IO.Packaging.dll
