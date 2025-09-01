@@ -17,6 +17,13 @@ Module Program
 
     ' Program Load
     Sub Main(args As String())
+        '' Synced record before generating report
+        Try
+            RunSQL("EXEC SP_Sync_LMS_Licence")
+        Catch ex As Exception
+            Console.WriteLine("ERROR: " & ex.Message)
+        End Try
+
         GenerateMonthlyEmail("DMC Account Reminder")
         GenerateMonthlyEmail("AI Licence Reminder")
         GenerateMonthlyEmail("Termed Licence Reminder")
@@ -504,6 +511,20 @@ Module Program
                 Return Nothing ' Skip file creation if no record
             End If
         End Using
+    End Function
+
+    Private Function RunSQL(ByVal sqlStr As String) As Integer
+        Dim Conn As SqlConnection
+        Dim Cmd As SqlCommand
+
+        Conn = New SqlConnection(connectionString)
+        Cmd = New SqlCommand(sqlStr, Conn)
+        Conn.Open()
+        Return Cmd.ExecuteNonQuery()
+        If Conn.State = ConnectionState.Open Then
+            Conn.Close()
+            Conn.Dispose()    '' add dispose function
+        End If
     End Function
 
 End Module
